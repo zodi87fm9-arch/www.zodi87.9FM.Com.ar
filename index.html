@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Radio FM</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: 'Roboto', 'Segoe UI', Arial, sans-serif;
+        -webkit-tap-highlight-color: transparent;
+        user-select: none;
+    }
+
+    html, body { height: 100%; overflow: hidden; }
+
+    body {
+        background:
+            radial-gradient(circle at 20% 20%, rgba(255,255,255,0.06), transparent 40%),
+            radial-gradient(circle at 80% 80%, rgba(0,0,0,0.15), transparent 45%),
+            linear-gradient(135deg, #0d7a7a 0%, #108f8f 50%, #0b6b6b 100%);
+        display: flex;
+        justify-content: center;
+    }
+
+    .app {
+        width: 100%;
+        max-width: 460px;
+        height: 100vh;
+        height: 100dvh;
+        background: #108f8f;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        box-shadow: 0 0 60px rgba(0,0,0,0.35);
+    }
+
+    /* ===== BARRA SUPERIOR ===== */
+    .app-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 20px;
+        color: #ffffff;
+    }
+
+    .app-bar h1 { font-size: 1.35rem; font-weight: 500; cursor: default; }
+
+    .app-bar svg { width: 27px; height: 27px; fill: #ffffff; cursor: pointer; }
+
+    /* ===== VOLUMEN ===== */
+    .volume-popup {
+        position: absolute;
+        top: 62px;
+        right: 14px;
+        background: #ffffff;
+        border-radius: 10px;
+        box-shadow: 0 3px 14px rgba(0,0,0,0.3);
+        padding: 14px 16px;
+        width: 210px;
+        display: none;
+        z-index: 25;
+    }
+
+    .volume-popup.open { display: block; }
+    .volume-popup label { font-size: 0.8rem; color: #616161; display: block; margin-bottom: 8px; font-weight: 500; }
+    .volume-row { display: flex; align-items: center; gap: 10px; }
+    .volume-row svg { width: 20px; height: 20px; fill: #108f8f; flex-shrink: 0; }
+
+    .volume-popup input[type=range] {
+        flex: 1;
+        -webkit-appearance: none;
+        height: 6px;
+        border-radius: 3px;
+        background: #b2dfdb;
+        outline: none;
+    }
+
+    .volume-popup input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #108f8f;
+        cursor: pointer;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+
+    #volPercent { font-size: 0.8rem; color: #108f8f; font-weight: 700; width: 38px; text-align: right; }
+
+    /* ===== CHIP ===== */
+    .status-chip {
+        position: absolute;
+        top: 70px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0,0,0,0.28);
+        color: #ffffff;
+        font-size: 0.78rem;
+        letter-spacing: 0.5px;
+        padding: 7px 18px;
+        border-radius: 20px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+        white-space: nowrap;
+        z-index: 15;
+    }
+
+    .status-chip.show { opacity: 1; }
+
+    /* ===== DIAL ===== */
+    .dial-area { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
+
+    .dial-wrap {
+        position: relative;
+        width: min(70vw, 60vh, 320px);
+        height: min(70vw, 60vh, 320px);
+        cursor: grab;
+        touch-action: none;
+    }
+
+    .dial-wrap:active { cursor: grabbing; }
+    .dial-wrap svg { width: 100%; height: 100%; display: block; }
+
+    .freq-display {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: #ffffff;
+        pointer-events: none;
+    }
+
+    .freq { font-size: clamp(3rem, 15vw, 4.3rem); font-weight: 200; letter-spacing: 2px; font-variant-numeric: tabular-nums; }
+    .mhz { font-size: 1.1rem; font-weight: 300; letter-spacing: 4px; margin-top: 10px; opacity: 0.9; }
+    .station-name { font-size: 0.8rem; letter-spacing: 2px; margin-top: 10px; opacity: 0.8; text-transform: uppercase; min-height: 1em; }
+
+    /* ===== PANEL INFERIOR ===== */
+    .controls-panel { background: #fafafa; border-top: 1px solid #e0e0e0; padding: 26px 24px 34px; }
+
+    .controls-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
+    .controls-row:last-child { margin-bottom: 0; }
+
+    .ctrl { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10px; cursor: pointer; }
+    .ctrl:active .ctrl-icon svg { transform: scale(0.85); }
+    .ctrl-icon svg { width: 32px; height: 32px; transition: transform 0.15s; }
+    .ctrl span { font-size: 0.92rem; color: #616161; text-align: center; }
+    .ctrl-arrow svg { stroke: #616161; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* ===== BOTÓN DE ENCENDIDO ===== */
+    .power-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; cursor: pointer; flex: 1; }
+
+    .power-btn {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.25s ease;
+        background: linear-gradient(145deg, #14a3a3, #0c7373);
+        box-shadow: 0 4px 14px rgba(16,143,143,0.45), inset 0 2px 4px rgba(255,255,255,0.25);
+    }
+
+    .power-btn svg { width: 30px; height: 30px; stroke: #ffffff; fill: none; stroke-width: 2.4; stroke-linecap: round; }
+    .power-btn:active { transform: scale(0.9); }
+    .power-btn.off { background: linear-gradient(145deg, #9e9e9e, #757575); box-shadow: 0 4px 10px rgba(0,0,0,0.25), inset 0 2px 4px rgba(255,255,255,0.2); }
+    .power-btn.off svg { stroke: #e0e0e0; }
+    .power-wrap span { font-size: 0.92rem; color: #108f8f; font-weight: 500; }
+    .power-wrap.off span { color: #757575; }
+
+    /* ===== GRABAR ===== */
+    .rec-dot { width: 28px; height: 28px; border-radius: 50%; background: #e53935; transition: all 0.2s; }
+    .ctrl-rec.recording .rec-dot { border-radius: 5px; width: 26px; height: 26px; animation: recPulse 1.1s infinite; }
+    .ctrl-rec.holding .rec-dot { background: #8e24aa; animation: recPulse 0.8s infinite; }
+
+    @keyframes recPulse {
+        0%   { box-shadow: 0 0 0 0 rgba(229,57,53,0.5); }
+        70%  { box-shadow: 0 0 0 14px rgba(229,57,53,0); }
+        100% { box-shadow: 0 0 0 0 rgba(229,57,53,0); }
+    }
+
+    /* ==========================================================
+       CONSOLA DJ (panel oculto)
+       ========================================================== */
+    .console-panel {
+        display: none;
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        max-height: 78%;
+        background: #07333a;
+        border-top: 3px solid #00d4ff;
+        border-radius: 18px 18px 0 0;
+        z-index: 50;
+        padding: 16px 18px 24px;
+        overflow-y: auto;
+        box-shadow: 0 -8px 24px rgba(0,0,0,0.45);
+        color: #ffffff;
+    }
+
+    .console-panel.active { display: block; animation: consoleUp 0.25s ease-out; }
+
+    @keyframes consoleUp {
+        from { transform: translateY(40px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+    }
+
+    .console-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: #00d4ff;
+        font-weight: 800;
+        font-size: 0.95rem;
+        margin-bottom: 10px;
+    }
+
+    .console-close { background: none; border: none; color: #ffffff; font-size: 1.1rem; cursor: pointer; }
+
+    .console-status {
+        font-size: 0.75rem;
+        color: #8fc7dd;
+        margin-bottom: 12px;
+        padding: 8px 10px;
+        background: rgba(255,255,255,0.06);
+        border-radius: 8px;
+        line-height: 1.4;
+    }
+
+    .console-btn {
+        width: 100%;
+        padding: 13px;
+        border: none;
+        border-radius: 10px;
+        font-size: 0.9rem;
+        font-weight: 800;
+        cursor: pointer;
+        margin-bottom: 9px;
+        transition: transform 0.1s;
+    }
+
+    .console-btn:active { transform: scale(0.97); }
+    .console-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .console-btn.mic-off { background: #d93025; color: #ffffff; }
+    .console-btn.mic-on { background: #34a853; color: #ffffff; }
+    .console-btn.broadcast { background: #0077c8; color: #ffffff; }
+    .console-btn.danger { background: #5f6368; color: #ffffff; }
+
+    .console-music { margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 12px; }
+
+    .file-btn {
+        display: block;
+        text-align: center;
+        padding: 11px;
+        background: #00a8cc;
+        color: #04212e;
+        font-weight: 800;
+        font-size: 0.85rem;
+        border-radius: 10px;
+        cursor: pointer;
+        margin-bottom: 10px;
+    }
+
+    .music-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+
+    .music-controls button {
+        background: rgba(255,255,255,0.12);
+        border: none;
+        color: #ffffff;
+        width: 44px;
+        height: 38px;
+        border-radius: 8px;
+        font-size: 1rem;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+
+    .music-controls input[type=range] {
+        flex: 1;
+        -webkit-appearance: none;
+        height: 6px;
+        background: #0088aa;
+        border-radius: 3px;
+        outline: none;
+    }
+
+    .music-controls input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #00d4ff;
+        cursor: pointer;
+    }
+
+    .track-list { max-height: 110px; overflow-y: auto; margin-bottom: 10px; }
+
+    .track-item {
+        font-size: 0.78rem;
+        color: #cdeaf5;
+        padding: 7px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .track-item.playing { background: rgba(0, 212, 255, 0.18); color: #00d4ff; font-weight: 700; }
+
+    .deck {
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 12px;
+        padding: 10px 10px 12px;
+        margin-bottom: 12px;
+        transition: border-color 0.3s, box-shadow 0.3s;
+    }
+
+    .deck.on-air {
+        border-color: #00e676;
+        box-shadow: 0 0 14px rgba(0,230,118,0.35);
+    }
+
+    .deck-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.78rem;
+        font-weight: 800;
+        color: #00d4ff;
+        margin-bottom: 8px;
+        letter-spacing: 1px;
+    }
+
+    .deck-status { color: #8fc7dd; font-weight: 500; }
+    .deck.on-air .deck-status { color: #00e676; }
+
+    .file-btn.deck-file { background: #00838f; color: #ffffff; margin-bottom: 8px; padding: 9px; font-size: 0.78rem; }
+
+    .console-listeners { font-size: 0.8rem; color: #8fc7dd; text-align: center; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+    <div class="app-bar">
+        <h1 id="appTitle">Radio FM</h1>
+        <svg id="btnVolume" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+    </div>
+
+    <div class="volume-popup" id="volumePopup">
+        <label>🔊 Altavoz — Volumen</label>
+        <div class="volume-row">
+            <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z"/></svg>
+            <input type="range" id="volSlider" min="0" max="100" value="90">
+            <span id="volPercent">90%</span>
+        </div>
+    </div>
+
+    <div class="status-chip" id="statusChip"></div>
+
+    <!-- DIAL -->
+    <div class="dial-area">
+        <div class="dial-wrap" id="dialWrap">
+            <svg viewBox="0 0 300 300">
+                <g id="ticks"></g>
+                <circle id="indicator" cx="150" cy="40" r="9" fill="#ffffff"/>
+            </svg>
+            <div class="freq-display">
+                <div class="freq" id="freqText">87.9</div>
+                <div class="mhz">MHz</div>
+                <div class="station-name" id="stationName">RADIO ZODI</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTROLES -->
+    <div class="controls-panel">
+
+        <div class="controls-row">
+            <div class="ctrl ctrl-arrow" id="btnPrev">
+                <div class="ctrl-icon"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></div>
+                <span>Anterior</span>
+            </div>
+
+            <div class="power-wrap" id="btnPower">
+                <button class="power-btn" id="powerBtn" aria-label="Encender/Apagar">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M12 3v8"/>
+                        <path d="M6.3 6.3a8 8 0 1 0 11.4 0"/>
+                    </svg>
+                </button>
+                <span id="powerLabel">Desactivar</span>
+            </div>
+
+            <div class="ctrl ctrl-arrow" id="btnNext">
+                <div class="ctrl-icon"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></div>
+                <span>Siguiente</span>
+            </div>
+        </div>
+
+        <div class="controls-row">
+            <div class="ctrl ctrl-rec" id="btnRec">
+                <div class="rec-dot"></div>
+                <span id="recLabel">Grabar</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ================= CONSOLA DJ ================= -->
+    <div class="console-panel" id="consolePanel">
+        <div class="console-header">
+            🎛️ CONSOLA DJ — ZODI
+            <button class="console-close" id="closeConsoleBtn">✕</button>
+        </div>
+        <div class="console-status" id="consoleStatus">● Desconectado — apretá "INICIAR TRANSMISIÓN" para salir al aire.</div>
+
+        <button class="console-btn broadcast" id="startBroadcastBtn">📡 INICIAR TRANSMISIÓN (WebRTC)</button>
+        <button class="console-btn mic-off" id="micToggleBtn" disabled>🎤 Micrófono: APAGADO</button>
+        <div class="music-controls" style="margin-top:9px;">
+            <span style="font-size:0.72rem;color:#8fc7dd;flex-shrink:0;">🎚️ VOZ</span>
+            <input type="range" id="micVol" min="0" max="100" value="60" title="Volumen de la voz respecto de la música">
+            <span id="micVolPercent" style="font-size:0.72rem;color:#00e676;width:34px;text-align:right;flex-shrink:0;">x1.8</span>
+        </div>
+
+        <div class="console-music">
+
+            <div class="deck" id="deckA">
+                <div class="deck-head"><span>🅰️ DECK A</span><span class="deck-status" id="deckAStatus">vacío</span></div>
+                <label class="file-btn deck-file">📂 CARGAR MÚSICA EN A
+                    <input type="file" class="deck-input" data-deck="A" accept="audio/*" multiple hidden>
+                </label>
+                <div class="music-controls">
+                    <button class="deck-prev" data-deck="A" title="Anterior">⏮</button>
+                    <button class="deck-play" data-deck="A" title="Reproducir/Pausar">▶️</button>
+                    <button class="deck-next" data-deck="A" title="Siguiente">⏭</button>
+                    <input type="range" class="deck-vol" data-deck="A" min="0" max="1" step="0.01" value="0.8" title="Volumen deck A">
+                </div>
+                <div class="track-list" id="deckAList"></div>
+            </div>
+
+            <div class="deck" id="deckB">
+                <div class="deck-head"><span>🅱️ DECK B</span><span class="deck-status" id="deckBStatus">vacío</span></div>
+                <label class="file-btn deck-file">📂 CARGAR MÚSICA EN B
+                    <input type="file" class="deck-input" data-deck="B" accept="audio/*" multiple hidden>
+                </label>
+                <div class="music-controls">
+                    <button class="deck-prev" data-deck="B" title="Anterior">⏮</button>
+                    <button class="deck-play" data-deck="B" title="Reproducir/Pausar">▶️</button>
+                    <button class="deck-next" data-deck="B" title="Siguiente">⏭</button>
+                    <input type="range" class="deck-vol" data-deck="B" min="0" max="1" step="0.01" value="0.8" title="Volumen deck B">
+                </div>
+                <div class="track-list" id="deckBList"></div>
+            </div>
+
+        </div>
+
+        <div class="console-listeners">👥 Oyentes conectados en vivo: <span id="liveListeners">0</span></div>
+        <button class="console-btn danger" id="stopBroadcastBtn" style="margin-top:12px;">⛔ CERRAR TRANSMISIÓN</button>
+    </div>
+</div>
+
+<audio id="radio" preload="none"></audio>
+<audio id="liveAudio" autoplay playsinline></audio>
+
+<script>
+/* ==========================================================
+   ESTACIONES
+   ========================================================== */
+const STREAM = "https://ia601907.us.archive.org/12/items/in-shot-20260729-133827243-mc-1/InShot_20260729_133827243-mc%20(1).mp3";
+
+const STATIONS = [
+    { freq: 87.9,  name: "Radio Zodi", url: null },
+    { freq: 90.1,  name: "FM 90.1",    url: null },
+    { freq: 94.3,  name: "Radio Disney", url: "https://playerservices.streamtheworld.com/api/livestream-redirect/DISNEY_ARG_BA_ADP.aac" },
+    { freq: 94.5,  name: "FM Máxima",  url: "https://mediapanel.siglocero.net:8002/stream" },
+    { freq: 98.7,  name: "Radio Nacional", url: "https://sa.mp3.icecast.magma.edge-access.net/sc_rad31" },
+    { freq: 99.1,  name: "Beat 991",   url: "https://radio02.ferozo.com:8850/stream", fb: "http://radio02.ferozo.com:8850/stream" },
+    { freq: 102.3, name: "FM Aspen",   url: "https://playerservices.streamtheworld.com/api/livestream-redirect/ASPENAAC.aac" },
+    { freq: 104.5, name: "FM 104.5",   url: null },
+    { freq: 107.3, name: "El Destape", url: "https://ipanel.instream.audio:7001/stream" }
+];
+
+const FMIN = 87.9, FMAX = 108.0, SNAP = 0.15;
+
+let tuned = 87.9;
+let isOn = true;
+let volume = 0.9;
+
+const audio = document.getElementById('radio');
+const liveAudio = document.getElementById('liveAudio');
+const freqText = document.getElementById('freqText');
+const stationName = document.getElementById('stationName');
+const indicator = document.getElementById('indicator');
+const statusChip = document.getElementById('statusChip');
+
+/* ---------- Construir marcas del dial ---------- */
+const CX = 150, CY = 150, R_OUT = 143, NTICKS = 120;
+const ticks = [];
+const ticksGroup = document.getElementById('ticks');
+
+for (let i = 0; i < NTICKS; i++) {
+    const angle = (i / NTICKS) * Math.PI * 2 - Math.PI / 2;
+    const isLong = i % 5 === 0;
+    const r1 = isLong ? R_OUT - 16 : R_OUT - 10;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', CX + r1 * Math.cos(angle));
+    line.setAttribute('y1', CY + r1 * Math.sin(angle));
+    line.setAttribute('x2', CX + R_OUT * Math.cos(angle));
+    line.setAttribute('y2', CY + R_OUT * Math.sin(angle));
+    line.setAttribute('stroke', 'rgba(255,255,255,0.45)');
+    line.setAttribute('stroke-width', isLong ? 3 : 1.6);
+    line.setAttribute('stroke-linecap', 'round');
+    ticksGroup.appendChild(line);
+    ticks.push(line);
+}
+
+/* ---------- Pintar dial ---------- */
+function freqProgress(f) { return (f - FMIN) / (FMAX - FMIN); }
+function angleForFreq(f) { return (freqProgress(f) * 360 - 90) * Math.PI / 180; }
+
+function paintDial() {
+    const progress = freqProgress(tuned);
+    ticks.forEach((t, i) => {
+        t.setAttribute('stroke', (i / (NTICKS - 1)) <= progress ? '#ffffff' : 'rgba(255,255,255,0.45)');
+    });
+    const rad = angleForFreq(tuned);
+    const r = R_OUT - 34;
+    indicator.setAttribute('cx', CX + r * Math.cos(rad));
+    indicator.setAttribute('cy', CY + r * Math.sin(rad));
+}
+
+function nearestStation(f) {
+    let best = -1, bd = Infinity;
+    STATIONS.forEach((s, i) => {
+        const d = Math.abs(s.freq - f);
+        if (d < bd) { bd = d; best = i; }
+    });
+    return bd <= SNAP ? best : -1;
+}
+
+function updateDisplay() {
+    freqText.textContent = tuned.toFixed(1);
+    const idx = nearestStation(tuned);
+    stationName.textContent = idx >= 0 ? STATIONS[idx].name.toUpperCase() : '— SIN SEÑAL —';
+    paintDial();
+}
+
+/* ==========================================================
+   AUDIO (grafo para volumen, estática y grabación sin permisos)
+   ========================================================== */
+let audioCtx = null, masterGain = null, tapDest = null, canRecordRadio = false;
+
+async function initAudioGraph() {
+    try {
+        await fetch(STREAM, { method: 'HEAD', mode: 'cors' });
+        canRecordRadio = true;
+    } catch (e) { canRecordRadio = false; }
+
+    if (canRecordRadio) {
+        audio.crossOrigin = 'anonymous';
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        masterGain = audioCtx.createGain();
+        masterGain.gain.value = volume;
+        masterGain.connect(audioCtx.destination);
+        tapDest = audioCtx.createMediaStreamDestination();
+        const src = audioCtx.createMediaElementSource(audio);
+        src.connect(masterGain);
+        src.connect(tapDest);
+    } else {
+        audio.volume = volume;
+    }
+}
+
+function setVolume(v) {
+    volume = v;
+    if (masterGain) masterGain.gain.value = v;
+    else audio.volume = v;
+    liveAudio.volume = v;
+    if (staticGain) staticGain.gain.value = v * 0.15;
+}
+
+/* ---------- Estática ---------- */
+let noiseNode = null, staticGain = null;
+
+function startStatic() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    if (noiseNode) return;
+    const len = audioCtx.sampleRate * 2;
+    const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    noiseNode = audioCtx.createBufferSource();
+    noiseNode.buffer = buf;
+    noiseNode.loop = true;
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass'; filter.frequency.value = 1400; filter.Q.value = 0.5;
+    staticGain = audioCtx.createGain();
+    staticGain.gain.value = volume * 0.15;
+    noiseNode.connect(filter); filter.connect(staticGain);
+    staticGain.connect(masterGain || audioCtx.destination);
+    noiseNode.start();
+}
+
+function stopStatic() {
+    if (noiseNode) {
+        try { noiseNode.stop(); noiseNode.disconnect(); } catch (e) {}
+        noiseNode = null;
+    }
+}
+
+
+/* ---------- Reproducción ----------
+   87.9 queda en SILENCIO hasta que el conductor transmita en vivo:
+   siempre se escucha lo que pasa AHORA, nada de música grabada. ---------- */
+function playTuned() {
+    const idx = nearestStation(tuned);
+    // Si el conductor está al aire y estamos en 87.9, suena SIEMPRE la transmisión en vivo
+    if (idx === 0 && modoVozEnVivo) {
+        stopStatic();
+        audio.pause();
+        liveAudio.play().catch(() => {});
+        showChip('🔴 EN VIVO — TRANSMISIÓN DE ZODI');
+        return;
+    }
+    stopStatic();
+    if (idx >= 0 && STATIONS[idx].url) {
+        if (audio.dataset.freq != STATIONS[idx].freq) {
+            audio.src = STATIONS[idx].url;
+            audio.dataset.freq = STATIONS[idx].freq;
+        }
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        audio.play().catch(() => {
+            if (STATIONS[idx].fb && audio.src !== STATIONS[idx].fb) {
+                audio.src = STATIONS[idx].fb;
+                audio.dataset.freq = STATIONS[idx].freq + '-fb';
+                audio.play().catch(() => showChip('⚠️ No se pudo reproducir'));
+            } else {
+                showChip('⚠️ No se pudo reproducir');
+            }
+        });
+        showChip('🔴 EN VIVO — ' + STATIONS[idx].name + ' ' + STATIONS[idx].freq.toFixed(1) + ' MHz');
+    } else if (idx === 0) {
+        // Radio Zodi sin transmisión en vivo: silencio total
+        audio.pause();
+        showChip('📻 RADIO ZODI — esperando la transmisión en vivo…');
+    } else {
+        audio.pause();
+        startStatic();
+    }
+}
+
+function applyTuning() {
+    updateDisplay();
+    if (!isOn) return;
+    const idx = nearestStation(tuned);
+    const hasSignal = idx >= 0 && STATIONS[idx].url;
+    // Volvemos a 87.9 mientras el conductor transmite → enganchamos la transmisión al instante
+    if (idx === 0 && modoVozEnVivo) { playTuned(); return; }
+    // Estamos en otra frecuencia pero la transmisión sigue → la silenciamos (sin cortarla)
+    if (idx !== 0 && modoVozEnVivo) liveAudio.pause();
+    if (idx === 0 && !modoVozEnVivo) { audio.pause(); stopStatic(); }
+    else if (hasSignal && audio.dataset.freq != STATIONS[idx].freq) playTuned();
+    else if (!hasSignal && !audio.paused) { audio.pause(); startStatic(); }
+    else if (!hasSignal && !noiseNode && idx !== 0) startStatic();
+}
+
+/* ---------- Girar el dial ---------- */
+const dialWrap = document.getElementById('dialWrap');
+let dragging = false;
+
+function angleFromEvent(e) {
+    const rect = dialWrap.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * 300 - CX;
+    const y = (e.clientY - rect.top) / rect.height * 300 - CY;
+    let deg = Math.atan2(y, x) * 180 / Math.PI;
+    return (deg + 90 + 360) % 360;
+}
+
+dialWrap.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    dialWrap.setPointerCapture(e.pointerId);
+    tuned = FMIN + (angleFromEvent(e) / 360) * (FMAX - FMIN);
+    applyTuning();
+});
+
+dialWrap.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    tuned = FMIN + (angleFromEvent(e) / 360) * (FMAX - FMIN);
+    applyTuning();
+});
+
+dialWrap.addEventListener('pointerup', () => {
+    dragging = false;
+    const idx = nearestStation(tuned);
+    if (idx >= 0) tuned = STATIONS[idx].freq;
+    updateDisplay();
+});
+
+/* ---------- Encendido / Apagado ---------- */
+const powerBtn = document.getElementById('powerBtn');
+const powerWrap = document.getElementById('btnPower');
+
+function refreshPower() {
+    powerBtn.classList.toggle('off', !isOn);
+    powerWrap.classList.toggle('off', !isOn);
+    document.getElementById('powerLabel').textContent = isOn ? 'Desactivar' : 'Activar';
+}
+
+powerWrap.addEventListener('click', () => {
+    if (isOn) {
+        isOn = false;
+        audio.pause();
+        liveAudio.pause();
+        stopStatic();
+        soltarWakeLock();
+        showChip('Radio apagada');
+    } else {
+        isOn = true;
+        showChip('🔴 Radio encendida');
+        keepAlive();
+        playTuned();
+    }
+    refreshPower();
+});
+
+/* ---------- Anterior / Siguiente ---------- */
+function jumpStation(dir) {
+    let idx = nearestStation(tuned);
+    if (idx < 0) {
+        idx = dir > 0
+            ? STATIONS.findIndex(s => s.freq > tuned)
+            : STATIONS.reduce((acc, s, i) => s.freq < tuned ? i : acc, -1);
+        if (idx < 0) idx = dir > 0 ? 0 : STATIONS.length - 1;
+    } else {
+        idx = (idx + dir + STATIONS.length) % STATIONS.length;
+    }
+    tuned = STATIONS[idx].freq;
+    updateDisplay();
+    if (isOn) playTuned();
+}
+
+document.getElementById('btnPrev').addEventListener('click', () => jumpStation(-1));
+document.getElementById('btnNext').addEventListener('click', () => jumpStation(1));
+
+/* ---------- Volumen (altavoz) ---------- */
+const volumePopup = document.getElementById('volumePopup');
+const volSlider = document.getElementById('volSlider');
+const volPercent = document.getElementById('volPercent');
+
+document.getElementById('btnVolume').addEventListener('click', (e) => {
+    e.stopPropagation();
+    volumePopup.classList.toggle('open');
+});
+
+volSlider.addEventListener('input', () => {
+    setVolume(volSlider.value / 100);
+    volPercent.textContent = volSlider.value + '%';
+});
+
+document.addEventListener('click', (e) => {
+    if (!volumePopup.contains(e.target)) volumePopup.classList.remove('open');
+});
+
+/* ==========================================================
+   GRABAR (tocar = radio, mantener = nota de voz)
+   ========================================================== */
+const btnRec = document.getElementById('btnRec');
+const recLabel = document.getElementById('recLabel');
+
+let radioRecorder = null, radioChunks = [];
+let voiceRecorder = null, voiceChunks = [], voiceStream = null;
+let longPressTimer = null, longPressFired = false, holding = false;
+
+function saveRecording(chunks, prefix) {
+    const blob = new Blob(chunks, { type: 'audio/webm' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = prefix + '-' + tuned.toFixed(1).replace('.', '') + 'mhz.webm';
+    a.click();
+}
+
+function startRadioRecording() {
+    if (!canRecordRadio || !tapDest) {
+        showChip('⚠️ Este navegador no permite grabar la radio');
+        return;
+    }
+    radioChunks = [];
+    try {
+        radioRecorder = new MediaRecorder(tapDest.stream);
+    } catch (e) {
+        showChip('⚠️ No se pudo iniciar la grabación');
+        return;
+    }
+    radioRecorder.ondataavailable = ev => radioChunks.push(ev.data);
+    radioRecorder.onstop = () => {
+        saveRecording(radioChunks, 'radio-zodi');
+        btnRec.classList.remove('recording');
+        recLabel.textContent = 'Grabar';
+        showChip('💾 Grabación de la radio guardada');
+    };
+    radioRecorder.start();
+    btnRec.classList.add('recording');
+    recLabel.textContent = 'Detener';
+    showChip('● Grabando la radio… tocá para parar');
+}
+
+async function startVoiceNote() {
+    longPressFired = true;
+    try {
+        voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+        showChip('⚠️ Permití el micrófono para la nota de voz');
+        return;
+    }
+    voiceChunks = [];
+    voiceRecorder = new MediaRecorder(voiceStream);
+    voiceRecorder.ondataavailable = ev => voiceChunks.push(ev.data);
+    voiceRecorder.onstop = () => {
+        voiceStream.getTracks().forEach(t => t.stop());
+        saveRecording(voiceChunks, 'nota-de-voz');
+        btnRec.classList.remove('holding');
+        if (!radioRecorder || radioRecorder.state !== 'recording') recLabel.textContent = 'Grabar';
+        showChip('💾 Nota de voz guardada');
+    };
+    voiceRecorder.start();
+    btnRec.classList.add('holding');
+    recLabel.textContent = '🎙️ Soltar';
+    showChip('🎙️ Grabando nota de voz… soltá para guardar');
+}
+
+btnRec.addEventListener('pointerdown', () => {
+    holding = true;
+    longPressFired = false;
+    longPressTimer = setTimeout(startVoiceNote, 500);
+});
+
+btnRec.addEventListener('pointerup', () => {
+    if (!holding) return;
+    holding = false;
+    clearTimeout(longPressTimer);
+    if (longPressFired) {
+        if (voiceRecorder && voiceRecorder.state === 'recording') voiceRecorder.stop();
+    } else {
+        if (radioRecorder && radioRecorder.state === 'recording') radioRecorder.stop();
+        else startRadioRecording();
+    }
+});
+
+btnRec.addEventListener('pointerleave', () => clearTimeout(longPressTimer));
+
+/* ==========================================================
+   CONSOLA DJ (5 toques en el título + clave 1212)
+   ========================================================== */
+const CLAVE_CONSOLA = '1212';
+const ADMIN_PEER_ID = 'zodi-fm-879-admin';
+
+const appTitle = document.getElementById('appTitle');
+const consolePanel = document.getElementById('consolePanel');
+const consoleStatus = document.getElementById('consoleStatus');
+const liveListenersEl = document.getElementById('liveListeners');
+
+let toquesTitulo = 0, temporizadorToques = null;
+
+appTitle.addEventListener('click', () => {
+    toquesTitulo++;
+    clearTimeout(temporizadorToques);
+    temporizadorToques = setTimeout(() => { toquesTitulo = 0; }, 2000);
+    if (toquesTitulo >= 5) {
+        toquesTitulo = 0;
+        const ingresada = prompt('🔐 Ingrese la clave de conductor:');
+        if (ingresada === CLAVE_CONSOLA) {
+            consolePanel.classList.add('active');
+        } else if (ingresada !== null) {
+            showChip('❌ Clave incorrecta');
+        }
+    }
+});
+
+document.getElementById('closeConsoleBtn').addEventListener('click', () => {
+    consolePanel.classList.remove('active');
+});
+
+/* --- Estado del conductor --- */
+let adminPeer = null, adminCtx = null, adminDest = null;
+let micStream = null, micSourceNode = null, micVolNode = null, micCompNode = null;
+const MIC_GAIN_MAX = 3;   // la voz puede llegar a x3 para imponerse sobre la música
+let broadcasting = false, micActivo = false;
+const oyentesVivos = new Map();
+
+window.broadcastingActive = false;
+
+function setStatus(txt) { consoleStatus.textContent = txt; }
+function actualizarOyentesVivos() { liveListenersEl.textContent = oyentesVivos.size; }
+
+const startBroadcastBtn = document.getElementById('startBroadcastBtn');
+const stopBroadcastBtn = document.getElementById('stopBroadcastBtn');
+const micToggleBtn = document.getElementById('micToggleBtn');
+
+startBroadcastBtn.addEventListener('click', async () => {
+    if (broadcasting) return;
+    try {
+        setStatus('⏳ Conectando al broker WebRTC...');
+        adminCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (adminCtx.state === 'suspended') await adminCtx.resume();
+
+        adminDest = adminCtx.createMediaStreamDestination();
+        adminDest.stream.getAudioTracks().forEach((track) => {
+            track.applyConstraints({
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false
+            }).catch(() => {});
+        });
+
+        routeDeckAudio();
+
+        adminPeer = new Peer(ADMIN_PEER_ID, { debug: 0 });
+
+        adminPeer.on('open', (id) => {
+            broadcasting = true;
+            window.broadcastingActive = true;
+            setStatus('● EN LÍNEA como "' + id + '" — los oyentes que sintonizen 87.9 te escucharán. Usá auriculares 🎧');
+            startBroadcastBtn.disabled = true;
+            micToggleBtn.disabled = false;
+            audio.pause();
+            stopStatic();
+            showChip('📡 TRANSMISIÓN INICIADA — estás al aire');
+        });
+
+        adminPeer.on('connection', (conn) => {
+            conn.on('open', () => {
+                const call = adminPeer.call(conn.peer, adminDest.stream);
+                oyentesVivos.set(conn.peer, call);
+                actualizarOyentesVivos();
+                call.on('close', () => {
+                    oyentesVivos.delete(conn.peer);
+                    actualizarOyentesVivos();
+                });
+            });
+        });
+
+        adminPeer.on('error', (err) => {
+            if (err.type === 'unavailable-id') {
+                setStatus('⚠️ Ya hay otro conductor usando este canal. Cerrá la otra pestaña.');
+            } else {
+                setStatus('⚠️ Error WebRTC: ' + err.type);
+            }
+        });
+    } catch (e) {
+        setStatus('⚠️ No se pudo iniciar: ' + e.message);
+    }
+});
+
+stopBroadcastBtn.addEventListener('click', () => {
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+    ['A','B'].forEach(k => { deckAudio[k].pause(); deckState[k].playing = false; });
+    activeDeck = null;
+    renderDecks();
+    if (adminPeer) { adminPeer.destroy(); adminPeer = null; }
+    oyentesVivos.clear();
+    actualizarOyentesVivos();
+    broadcasting = false;
+    micActivo = false;
+    window.broadcastingActive = false;
+    micToggleBtn.disabled = true;
+    micToggleBtn.className = 'console-btn mic-off';
+    micToggleBtn.textContent = '🎤 Micrófono: APAGADO';
+    startBroadcastBtn.disabled = false;
+    setStatus('● Transmisión cerrada. Los oyentes vuelven a la radio normal.');
+    showChip('⛔ Transmisión cerrada');
+    if (isOn) playTuned();
+});
+
+/* --- Micrófono del conductor (refuerzo + compresor de radio) --- */
+micToggleBtn.addEventListener('click', async () => {
+    if (!broadcasting) return;
+    if (micActivo) {
+        micStream.getTracks().forEach(t => t.stop());
+        micSourceNode.disconnect();
+        micStream = null;
+        micActivo = false;
+        micToggleBtn.className = 'console-btn mic-off';
+        micToggleBtn.textContent = '🎤 Micrófono: APAGADO';
+        setStatus('● En línea — micrófono apagado (suena solo la música).');
+    } else {
+        try {
+            micStream = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            });
+            micSourceNode = adminCtx.createMediaStreamSource(micStream);
+            micVolNode = adminCtx.createGain();
+            micVolNode.gain.value = (parseInt(document.getElementById('micVol').value) / 100) * MIC_GAIN_MAX;
+            micCompNode = adminCtx.createDynamicsCompressor();
+            micCompNode.threshold.value = -18;
+            micCompNode.knee.value = 12;
+            micCompNode.ratio.value = 4;
+            micCompNode.attack.value = 0.003;
+            micCompNode.release.value = 0.2;
+            micSourceNode.connect(micVolNode);
+            micVolNode.connect(micCompNode);
+            micCompNode.connect(adminDest);
+            micActivo = true;
+            micToggleBtn.className = 'console-btn mic-on';
+            micToggleBtn.textContent = '🎤 Micrófono: PRENDIDO 🔴';
+            setStatus('🔴 AL AIRE — tu voz se transmite a ' + oyentesVivos.size + ' oyente(s).');
+        } catch (e) {
+            setStatus('⚠️ No se pudo acceder al micrófono (¿HTTPS y permiso concedido?).');
+        }
+    }
+});
+
+// Volumen de la voz del conductor (en vivo, sin cortar la transmisión)
+document.getElementById('micVol').addEventListener('input', (e) => {
+    const v = (parseInt(e.target.value) / 100) * MIC_GAIN_MAX;
+    if (micVolNode && adminCtx) {
+        micVolNode.gain.cancelScheduledValues(0);
+        micVolNode.gain.setValueAtTime(v, adminCtx.currentTime);
+    }
+    document.getElementById('micVolPercent').textContent = 'x' + v.toFixed(1);
+});
+
+/* ==========================================================
+   DOS DECKS DE MÚSICA (modo DJ: terminó un tema → arranca el otro deck)
+   ========================================================== */
+const FADE = 1.8;
+const deckAudio = { A: new Audio(), B: new Audio() };
+const deckState = {
+    A: { tracks: [], next: 0, gainNode: null, routed: false, playing: false },
+    B: { tracks: [], next: 0, gainNode: null, routed: false, playing: false }
+};
+const deckVol = { A: 0.8, B: 0.8 };
+let activeDeck = null;
+
+// Cuando termina un tema, arranca automáticamente el OTRO deck (como un DJ)
+['A', 'B'].forEach(k => {
+    deckAudio[k].addEventListener('ended', () => {
+        deckState[k].playing = false;
+        const otro = k === 'A' ? 'B' : 'A';
+        if (deckState[otro].tracks.length) {
+            playDeck(otro);
+        } else if (deckState[k].tracks.length) {
+            playDeck(k);   // si el otro deck está vacío, sigue este
+        } else {
+            activeDeck = null;
+            renderDecks();
+        }
+    });
+});
+
+// Conectar ambos decks a la transmisión (se llama al iniciar la transmisión)
+function routeDeckAudio() {
+    ['A', 'B'].forEach(k => {
+        const st = deckState[k];
+        if (st.routed || !adminCtx) return;
+        st.gainNode = adminCtx.createGain();
+        st.gainNode.gain.value = 0;
+        adminCtx.createMediaElementSource(deckAudio[k]).connect(st.gainNode);
+        st.gainNode.connect(adminDest);
+        st.gainNode.connect(adminCtx.destination);
+        st.routed = true;
+    });
+}
+
+function fadeDeck(k, target, then) {
+    const st = deckState[k];
+    if (st.gainNode && adminCtx) {
+        const g = st.gainNode.gain;
+        g.cancelScheduledValues(0);
+        g.setValueAtTime(g.value, adminCtx.currentTime);
+        g.linearRampToValueAtTime(target, adminCtx.currentTime + FADE);
+        if (then) setTimeout(then, FADE * 1000);
+    } else if (then) then();
+}
+
+function playDeck(k) {
+    const st = deckState[k];
+    if (!st.tracks.length) return;
+    st.next = ((st.next % st.tracks.length) + st.tracks.length) % st.tracks.length;
+    const tema = st.tracks[st.next];
+    st.next = (st.next + 1) % st.tracks.length;
+
+    const anterior = activeDeck;
+    activeDeck = k;
+    st.playing = true;
+
+    // Fundido: bajamos el deck anterior y arrancamos este
+    if (anterior && anterior !== k) {
+        deckState[anterior].playing = false;
+        fadeDeck(anterior, 0, () => { deckAudio[anterior].pause(); });
+    }
+    deckAudio[k].src = tema.url;
+    deckAudio[k].play().catch(() => {});
+    fadeDeck(k, deckVol[k]);
+    setStatus('🎵 Deck ' + k + ' al aire: ' + tema.nombre);
+    renderDecks();
+}
+
+function pauseDeck(k) {
+    deckState[k].playing = false;
+    if (activeDeck === k) activeDeck = null;
+    fadeDeck(k, 0, () => deckAudio[k].pause());
+    renderDecks();
+}
+
+function deckToggle(k) {
+    if (deckState[k].playing) pauseDeck(k);
+    else playDeck(k);
+}
+
+function renderDecks() {
+    ['A', 'B'].forEach(k => {
+        const st = deckState[k];
+        const list = document.getElementById('deck' + k + 'List');
+        list.innerHTML = '';
+        st.tracks.forEach((t, i) => {
+            const div = document.createElement('div');
+            const esActual = st.playing && ((st.next - 1 + st.tracks.length) % st.tracks.length) === i;
+            div.className = 'track-item' + (esActual ? ' playing' : '');
+            div.textContent = (i + 1) + '. ' + t.nombre;
+            div.addEventListener('click', () => { st.next = i; playDeck(k); });
+            list.appendChild(div);
+        });
+        const status = document.getElementById('deck' + k + 'Status');
+        status.textContent = st.playing ? '🔴 AL AIRE' : (st.tracks.length ? st.tracks.length + ' tema(s)' : 'vacío');
+        document.getElementById('deck' + k).classList.toggle('on-air', st.playing);
+        const btn = document.querySelector('.deck-play[data-deck="' + k + '"]');
+        if (btn) btn.textContent = st.playing ? '⏸' : '▶️';
+    });
+}
+
+// Cargar música en cada deck
+document.querySelectorAll('.deck-input').forEach(inp => {
+    inp.addEventListener('change', (e) => {
+        const k = e.target.dataset.deck;
+        const archivos = Array.from(e.target.files);
+        archivos.forEach(f => deckState[k].tracks.push({ nombre: f.name, url: URL.createObjectURL(f) }));
+        renderDecks();
+        // Si ningún deck está sonando, arranca este
+        if (archivos.length && activeDeck === null) playDeck(k);
+    });
+});
+
+document.querySelectorAll('.deck-play').forEach(b => b.addEventListener('click', () => deckToggle(b.dataset.deck)));
+document.querySelectorAll('.deck-next').forEach(b => b.addEventListener('click', () => playDeck(b.dataset.deck)));
+document.querySelectorAll('.deck-prev').forEach(b => b.addEventListener('click', () => {
+    const st = deckState[b.dataset.deck];
+    st.next = st.next - 2;         // retrocede respecto al último tema sonado
+    playDeck(b.dataset.deck);
+}));
+document.querySelectorAll('.deck-vol').forEach(s => s.addEventListener('input', (e) => {
+    const k = e.target.dataset.deck;
+    deckVol[k] = parseFloat(e.target.value);
+    const st = deckState[k];
+    if (st.gainNode && st.playing && adminCtx) {
+        st.gainNode.gain.cancelScheduledValues(0);
+        st.gainNode.gain.setValueAtTime(deckVol[k], adminCtx.currentTime);
+    }
+}));
+
+/* ==========================================================
+   MODO OYENTE — engancha la voz en vivo del conductor
+   ========================================================== */
+let listenerPeer = null, listenerConn = null, liveCall = null;
+let modoVozEnVivo = false;
+
+function setModoVozEnVivo(on) {
+    modoVozEnVivo = on;
+    if (on) {
+        audio.pause();
+        stopStatic();
+        liveAudio.play().catch(() => {});
+        keepAlive();
+        showChip('🔴 EN VIVO — TRANSMISIÓN DE ZODI');
+    } else {
+        liveAudio.pause();
+        liveAudio.srcObject = null;
+        liveCall = null;
+        // Solo cuando NADIE transmite vuelve la música de fondo
+        if (isOn && !window.broadcastingActive) playTuned();
+    }
+}
+
+function intentarConexionAdmin() {
+    if (!listenerPeer || listenerPeer.destroyed || !listenerPeer.open) return;
+    if (listenerConn && listenerConn.open) return;
+    try {
+        listenerConn = listenerPeer.connect(ADMIN_PEER_ID, { reliable: true });
+        listenerConn.on('close', () => { listenerConn = null; });
+    } catch (e) {}
+}
+
+function conectarOyenteEnVivo() {
+    if (listenerPeer && !listenerPeer.destroyed) return;
+    try {
+        listenerPeer = new Peer({ debug: 0 });
+    } catch (e) { return; }
+
+    listenerPeer.on('open', () => { intentarConexionAdmin(); });
+
+    listenerPeer.on('call', (call) => {
+        call.answer();
+        liveCall = call;
+        call.on('stream', (stream) => {
+            liveAudio.srcObject = stream;
+            setModoVozEnVivo(true);
+            liveAudio.play().catch(() => {});
+        });
+        call.on('close', () => {
+            // Si se cortó la transmisión, volvemos a la música SOLO si ya no hay nadie al aire
+            if (liveCall === call) setModoVozEnVivo(false);
+        });
+    });
+
+    listenerPeer.on('disconnected', () => {
+        try { listenerPeer.reconnect(); } catch (e) {}
+    });
+
+    listenerPeer.on('error', () => {
+        // El conductor no está al aire: sigue sonando la radio normal
+    });
+}
+
+// Vigía: cada 10 segundos verifica que no quedemos desenganchados de la transmisión
+setInterval(() => {
+    const en87 = isOn && nearestStation(tuned) === 0;
+    if (!en87 || modoVozEnVivo || window.broadcastingActive) return;
+    if (!listenerPeer || listenerPeer.destroyed) conectarOyenteEnVivo();
+    else intentarConexionAdmin();
+}, 10000);
+
+/* ---------- Keep-alive: evita que se corte al apagarse la pantalla ---------- */
+let wakeLock = null;
+async function keepAlive() {
+    try {
+        if ('wakeLock' in navigator && !wakeLock && isOn) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => { wakeLock = null; });
+        }
+    } catch (e) {}
+}
+
+function soltarWakeLock() {
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+
+/* Al volver a la app (conductor u oyente): reanudar todo lo que quedó pausado */
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    if (typeof adminCtx !== 'undefined' && adminCtx && adminCtx.state === 'suspended') adminCtx.resume();
+    if (typeof deckState !== 'undefined') {
+        ['A','B'].forEach(k => { if (deckState[k].playing) deckAudio[k].play().catch(() => {}); });
+    }
+    if (isOn && modoVozEnVivo) liveAudio.play().catch(() => {});
+});
+
+/* ---------- Chip ---------- */
+let chipTimer = null;
+function showChip(text) {
+    statusChip.textContent = text;
+    statusChip.classList.add('show');
+    clearTimeout(chipTimer);
+    chipTimer = setTimeout(() => statusChip.classList.remove('show'), 2500);
+}
+
+/* ---------- Inicio ---------- */
+(async () => {
+    await initAudioGraph();
+    updateDisplay();
+    playTuned();
+    conectarOyenteEnVivo();
+})();
+</script>
+
+</body>
+</html>
